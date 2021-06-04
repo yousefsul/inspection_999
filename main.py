@@ -1,4 +1,5 @@
 import glob
+import shutil
 
 from inspection_999 import Inspection999
 
@@ -7,3 +8,5 @@ if __name__ == '__main__':
     for ack_file in ack_files:
         inspection_ack_file = Inspection999(ack_file)
         inspection_ack_file.extract_index_data()
+        shutil.move(ack_file, 'inspected')
+

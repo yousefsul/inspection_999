@@ -24,16 +24,20 @@ def get_current_status():
 class Inspection999:
     def __init__(self, ack_file):
         self.ack_file = ack_file
-        self.count = 1
-        self.c = 0
-        self.index = 0
+        self.count, self.index = 1, 0
         self.time = datetime.datetime.now().time().strftime("%H:%M:%S")
         self.date = datetime.datetime.now().date().strftime("%Y%m%d")
         self.status_histroy = [get_current_status()]
-        self.segment = None
-        self.data = None
-        self.data_element = None
-        self.info_999 = {}
+        self.segment, self.data, self.data_element = None, None, None
+        self.info_999 = {'header_section': {
+            'file_name': os.path.basename(ack_file),
+            "date_created": {
+                "date": self.time,
+                "time": self.date
+            },
+            "current_status": get_current_status(),
+            "status_history": [get_current_status()],
+        }}
         self.final_segment = {'header_section': {
             'file_name': os.path.basename(ack_file),
             "date_created": {
@@ -50,14 +54,11 @@ class Inspection999:
         for i in range(len(self.file_info)):
             if self.file_info:
                 self.extract_data()
+        self.__insert_999_data()
 
-        print(json.dumps(self.final_segment, indent=4))
-        self.connection.connect_to_test_999_collection()
-        self.connection.insert_to_test_999_collection(self.final_segment)
-
-    def __pop_element(self, ind):
+    def __pop_element(self, index):
         if self.file_info:
-            self.file_info.pop(ind)
+            self.file_info.pop(index)
 
     def extract_data(self):
         self.data_element = self.file_info[0].split('*')
@@ -69,28 +70,15 @@ class Inspection999:
         self.count = 1
         self.final_segment[self.segment] = {}
         if self.segment.split('-')[0] == 'AK1':
-            for self.data in self.data_element:
-                data_element_count = '{:02}'.format(self.count)
-                self.final_segment[self.segment][data_element_count] = self.data
-                self.count += 1
-            self.__pop_element(0)
+            self.__bulid_data_element(self.final_segment[self.segment])
             self.__bulid_ak1_dict()
 
         elif self.segment.split('-')[0] == 'AK2':
             self.final_segment[self.segment]['loop_name'] = loop_2000
-            for self.data in self.data_element:
-                data_element_count = '{:02}'.format(self.count)
-                self.final_segment[self.segment][data_element_count] = self.data
-                self.count += 1
-            self.__pop_element(0)
+            self.__bulid_data_element(self.final_segment[self.segment])
             self.__bulid_ak2_dict()
-
         else:
-            for self.data in self.data_element:
-                data_element_count = '{:02}'.format(self.count)
-                self.final_segment[self.segment][data_element_count] = self.data
-                self.count += 1
-            self.__pop_element(0)
+            self.__bulid_data_element(self.final_segment[self.segment])
 
     def __bulid_ak1_dict(self):
         for i in range(len(self.file_info)):
@@ -112,91 +100,65 @@ class Inspection999:
 
     def __bulid_ak2_dict(self):
         for i in range(len(self.file_info)):
+            i = 0
             try:
                 if self.file_info[i].split('*')[0] == 'IK3':
-                    data_element = self.file_info[i].split('*')
+                    self.data_element = self.file_info[i].split('*')
                     self.index += 1
-                    segment = data_element.pop(0) + '-' + str(self.index)
+                    segment = self.data_element.pop(0) + '-' + str(self.index)
                     self.final_segment[self.segment][segment] = {}
                     self.final_segment[self.segment][segment]['loop_name'] = loop_2100
-                    self.count = 1
-                    for data in data_element:
-                        data_element_count = '{:02}'.format(self.count)
-                        self.final_segment[self.segment][segment][data_element_count] = data
-                        self.count += 1
-                    self.file_info.pop(i)
+                    self.__bulid_data_element(self.final_segment[self.segment][segment])
                     self.__bulid_ik3_dict(segment)
-                    while self.c > 0:
-                        self.__pop_element(0)
-                        self.c -= 1
 
-                elif self.file_info[i].split('*')[0] == 'IK5':
-                    data_element = self.file_info[i].split('*')
+                if self.file_info[i].split('*')[0] == 'IK5':
+                    self.data_element = self.file_info[i].split('*')
                     self.index += 1
-                    segment = data_element.pop(0) + '-' + str(self.index)
+                    segment = self.data_element.pop(0) + '-' + str(self.index)
                     self.final_segment[self.segment][segment] = {}
-                    self.count = 1
-                    for data in data_element:
-                        data_element_count = '{:02}'.format(self.count)
-                        self.final_segment[self.segment][segment][data_element_count] = data
-                        self.count += 1
-                    self.file_info.pop(i)
+                    self.__bulid_data_element(self.final_segment[self.segment][segment])
+                    break
             except IndexError:
                 pass
 
     def __bulid_ik3_dict(self, segment):
         for i in range(len(self.file_info)):
-            if self.file_info[i].split('*')[0] == 'CTX':
-                self.c += 1
-                data_element = self.file_info[i].split('*')
-                self.index += 1
-                sub_seg = data_element.pop(0) + '-' + str(self.index)
-                self.final_segment[self.segment][segment][sub_seg] = {}
-                self.count = 1
-                for data in data_element:
-                    data_element_count = '{:02}'.format(self.count)
-                    self.final_segment[self.segment][segment][sub_seg][data_element_count] = data
-                    self.count += 1
+            i = 0
+            try:
+                if self.file_info[i].split('*')[0] == 'CTX':
+                    self.data_element = self.file_info[i].split('*')
+                    self.index += 1
+                    sub_segment = self.data_element.pop(0) + '-' + str(self.index)
+                    self.final_segment[self.segment][segment][sub_segment] = {}
+                    self.__bulid_data_element(self.final_segment[self.segment][segment][sub_segment])
 
-            elif self.file_info[i].split('*')[0] == 'IK4':
-                self.c += 1
-                data_element = self.file_info[i].split('*')
-                self.index += 1
-                sub_seg = data_element.pop(0) + '-' + str(self.index)
-                self.final_segment[self.segment][segment][sub_seg] = {}
-                self.final_segment[self.segment][segment][sub_seg]['loop_name'] = loop_2110
-                self.count = 1
-                for data in data_element:
-                    data_element_count = '{:02}'.format(self.count)
-                    self.final_segment[self.segment][segment][sub_seg][data_element_count] = data
-                    self.count += 1
-                self.__bulid_ik4_dict(segment, sub_seg, i)
-            else:
-                break
+                elif self.file_info[i].split('*')[0] == 'IK4':
+                    self.data_element = self.file_info[i].split('*')
+                    self.index += 1
+                    sub_segment = self.data_element.pop(0) + '-' + str(self.index)
+                    self.final_segment[self.segment][segment][sub_segment] = {}
+                    self.final_segment[self.segment][segment][sub_segment]['loop_name'] = loop_2110
+                    self.__bulid_data_element(self.final_segment[self.segment][segment][sub_segment])
+                    self.__bulid_ik4_dict(segment, sub_segment)
+                else:
+                    break
+            except IndexError:
+                pass
 
-    def __bulid_ik4_dict(self, segment, seg, i):
-        if self.file_info[i + 1].split('*')[0] == 'CTX':
-            data_element = self.file_info[i + 1].split('*')
-            self.index += 1
-            sub_seg = data_element.pop(0) + '-' + str(self.index)
-            self.final_segment[self.segment][segment][seg][sub_seg] = {}
-            self.count = 1
-            for data in data_element:
-                data_element_count = '{:02}'.format(self.count)
-                self.final_segment[self.segment][segment][seg][sub_seg][data_element_count] = data
-                self.count += 1
-            self.__pop_element(i + 1)
+    def __bulid_ik4_dict(self, segment, seg):
+        for i in range(len(self.file_info)):
+            i = 0
+            try:
+                if self.file_info[i].split('*')[0] == 'CTX':
+                    self.data_element = self.file_info[i].split('*')
+                    self.index += 1
+                    sub_segment = self.data_element.pop(0) + '-' + str(self.index)
+                    self.final_segment[self.segment][segment][seg][sub_segment] = {}
+                    self.__bulid_data_element(self.final_segment[self.segment][segment][seg][sub_segment])
+            except IndexError:
+                pass
 
     def extract_index_data(self):
-        self.info_999 = {'header_section': {
-            'file_name': os.path.basename(self.final_segment.get('header_section').get('file_name')),
-            "date_created": {
-                "date": self.time,
-                "time": self.date
-            },
-            "current_status": get_current_status(),
-            "status_history": [get_current_status()],
-        }}
         for data in self.final_segment:
             segment = data.split('-')[0]
             if segment == 'ISA':
@@ -245,3 +207,15 @@ class Inspection999:
 
         self.connection.connect_to_999_collection()
         self.connection.insert_to_999_collection(self.info_999)
+
+    def __insert_999_data(self):
+        self.connection.connect_to_test_999_collection()
+        self.connection.insert_to_test_999_collection(self.final_segment)
+
+    def __bulid_data_element(self, param):
+        self.count = 1
+        for self.data in self.data_element:
+            data_element_count = '{:02}'.format(self.count)
+            param[data_element_count] = self.data
+            self.count += 1
+        self.__pop_element(0)
